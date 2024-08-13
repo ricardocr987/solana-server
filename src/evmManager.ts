@@ -64,7 +64,7 @@ export const evmManager = new Elysia({ prefix: '/evm' })
             fees: "0",
             gas: "0",
             memo: "",
-            format: "json",
+            format: "hex",
             tokenId: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
             validatorAddress: "",
             params: {
