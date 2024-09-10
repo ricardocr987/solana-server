@@ -2,6 +2,35 @@ import { TransactionInstruction, PublicKey, ComputeBudgetProgram, TransactionMes
 import { config } from "../config";
 import bs58 from "bs58";
 
+export async function prepareTokenAccountTransaction(initAccountInstruction: TransactionInstruction, payerKey: PublicKey) {
+  const instructions = [initAccountInstruction];
+  const recentBlockhash = (await config.RPC.getLatestBlockhash('finalized')).blockhash;
+  const message = new TransactionMessage({
+    payerKey,
+    recentBlockhash,
+    instructions,
+  }).compileToV0Message();
+  const transactionToEstimatePriority = new VersionedTransaction(message);
+  const microLamports = await getPriorityFeeEstimate('High', transactionToEstimatePriority) || 20000;
+
+  const computePriceInstruction = ComputeBudgetProgram.setComputeUnitPrice({ microLamports });
+  instructions.unshift(computePriceInstruction);
+
+  const units = await getComputeUnits([...instructions], payerKey);
+  const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({ units });
+  instructions.unshift(computeBudgetInstruction);
+  console.log(microLamports)
+
+  const messageV0 = new TransactionMessage({
+    payerKey,
+    recentBlockhash,
+    instructions,
+  }).compileToV0Message();
+  const transaction = new VersionedTransaction(messageV0);
+  
+  return Buffer.from(transaction.serialize()).toString('base64');
+}
+
 export async function prepareTransaction(transferInstruction: TransactionInstruction, payerKey: PublicKey) {
   const instructions = [transferInstruction];
   const recentBlockhash = (await config.RPC.getLatestBlockhash('finalized')).blockhash;
