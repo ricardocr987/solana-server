@@ -56,6 +56,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
       const tokenAccountInfo = await config.RPC.getAccountInfo(tokenAccount);
 
       if (tokenAccountInfo) {
+        console.log('Token account already exists');
         return new Response(JSON.stringify({ message: 'Token account already exists' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -78,7 +79,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
     }
   })
 
-  .post('/sendNewTokenAccount', async ({ body }: { body: SendNewTokenAccountTransaction }) => {
+  .post('/sendTransaction', async ({ body }: { body: SendNewTokenAccountTransaction }) => {
     const transactionBuffer = Buffer.from(body.transaction, 'base64');
     const deserializedTransaction = VersionedTransaction.deserialize(transactionBuffer);
 
@@ -141,7 +142,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
     }
   }, { body: SendTransactionSchema })
 
-  .get('/createTransaction', async ({ query }: { query: CreateTransactionParams }) => {
+  .get('/createPaymentTransaction', async ({ query }: { query: CreateTransactionParams }) => {
     try {
       const dataset = await getDataset(query.datasetId);
       if (!dataset || !dataset.price) {
@@ -203,7 +204,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
     }
   })
 
-  .post('/sendTransaction', async ({ body }: { body: SendTransaction }) => {
+  .post('/sendPaymentTransaction', async ({ body }: { body: SendTransaction }) => {
     const transactionBuffer = Buffer.from(body.transaction, 'base64');
     const deserializedTransaction = VersionedTransaction.deserialize(transactionBuffer);
 

@@ -19,7 +19,6 @@ export async function prepareTokenAccountTransaction(initAccountInstruction: Tra
   const units = await getComputeUnits([...instructions], payerKey);
   const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({ units });
   instructions.unshift(computeBudgetInstruction);
-  console.log(microLamports)
 
   const messageV0 = new TransactionMessage({
     payerKey,
@@ -48,7 +47,6 @@ export async function prepareTransaction(transferInstruction: TransactionInstruc
   //const units = await getComputeUnits([...instructions], payerKey);
   const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({ units: 6861 });
   instructions.unshift(computeBudgetInstruction);
-  console.log(microLamports)
 
   const messageV0 = new TransactionMessage({
     payerKey,

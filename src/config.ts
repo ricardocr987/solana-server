@@ -12,13 +12,11 @@ export const config = {
   ALEPH_SERVER: Bun.env.ALEPH_SERVER || 'https://api2.aleph.im',
   SOL_ACCOUNT: new SOLAccount(messagesSigner.publicKey, messagesSigner),
   FISHNET_CHANNEL: Bun.env.FISHNET_CHANNEL || 'FISHNET_TEST_V1.1',
-  ADAMIK_KEY: Bun.env.ADAMIK_KEY || '',
 };
 
 const requiredEnvVariables = [
   'RPC_KEY',
   'MESSAGES_SIGNER',
-  'ADAMIK_KEY',
 ];
 
 requiredEnvVariables.forEach(variable => {
