@@ -40,8 +40,6 @@ export async function validateTransfer(signature: string, datasetId: string): Pr
     const decodedSignerATA = AccountLayout.decode(signerATA.data);
     const seller = decodedSellerATA.owner.toBase58();
     const signer = decodedSignerATA.owner.toBase58();
-    // the owner is the signer?
-    console.log(seller, signer, owner.toBase58);
     const price = BigNumber(dataset.price).times(TEN.pow(MINT_DECIMALS['USDC'])).integerValue(BigNumber.ROUND_FLOOR);
 
     if (amount.toString() !== price.toString()) throw new Error('amount not transferred');

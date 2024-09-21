@@ -1,5 +1,5 @@
-import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { createSPLTokenInstruction } from "./solana/transferInstruction";
+import { PublicKey } from "@solana/web3.js";
+import { createTransferInstruction } from "./solana/transferInstruction";
 import { prepareTokenAccountTransaction, prepareTransaction } from "./solana/prepareTransaction";
 import { validateTransfer } from "./solana/validateTransfer";
 import { APP_REFERENCE, MINT_DECIMALS, USDC_MINT } from "./constants";
@@ -10,41 +10,42 @@ import BigNumber from 'bignumber.js';
 import { Elysia, t } from "elysia";
 import { config } from "./config";
 import db from "./db";
+import { confirmTransaction } from "./solana/confirmTransaction";
 
-export type CreateTokenAccountTransactionParams = {
-  signer: string;
-}
-
-export type SendNewTokenAccountTransaction = {
-  transaction: string,
-}
-
-export type CreateTransactionParams = {
-  datasetId: string;
+export type CreateTokenAccount = {
   signer: string;
 }
 
 export type SendTransaction = {
+  transaction: string,
+}
+
+export type CreatePayment = {
+  datasetId: string;
+  signer: string;
+}
+
+export type SendPayment = {
   datasetId: string;
   transaction: string,
 }
 
-export const SendTransactionSchema = t.Object({
+export const SendPaymentSchema = t.Object({
   datasetId: t.String(),
   transaction: t.String(),
 });
 
-export type GetTransactionsParams = {
+export type GetTransactions = {
   address: string;
 }
 
 export const solanaManager = new Elysia({ prefix: '/solana' })
-  .get('/createTokenAccount', async ({ query }: { query: CreateTokenAccountTransactionParams }) => {
+  .get('/createTokenAccount', async ({ query }: { query: CreateTokenAccount }) => {
     try {
       const signer = new PublicKey(query.signer);
       const senderInfo = await config.RPC.getAccountInfo(signer);
       if (!senderInfo) {
-        const message = 'Sender not found';
+        const message = 'Ensure you have SOL on your wallet';
         console.error(message);
         return new Response(JSON.stringify({ error: message }), {
           status: 404,
@@ -54,9 +55,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
 
       const tokenAccount = getAssociatedTokenAddressSync(USDC_MINT, signer);
       const tokenAccountInfo = await config.RPC.getAccountInfo(tokenAccount);
-
       if (tokenAccountInfo) {
-        console.log('Token account already exists');
         return new Response(JSON.stringify({ message: 'Token account already exists' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -65,7 +64,6 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
 
       const instruction = createAssociatedTokenAccountInstruction(signer, tokenAccount, signer, USDC_MINT);
       const serializedTransaction = await prepareTokenAccountTransaction(instruction, signer);
-
       return new Response(JSON.stringify({ transaction: serializedTransaction }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -79,55 +77,9 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
     }
   })
 
-  .post('/sendTransaction', async ({ body }: { body: SendNewTokenAccountTransaction }) => {
-    const transactionBuffer = Buffer.from(body.transaction, 'base64');
-    const deserializedTransaction = VersionedTransaction.deserialize(transactionBuffer);
-
+  .post('/sendTransaction', async ({ body }: { body: SendTransaction }) => {
     try {
-      const signature = await config.RPC.sendRawTransaction(deserializedTransaction.serialize(), {
-        skipPreflight: true,
-        maxRetries: 0,
-      });
-
-      let confirmedTx = null;
-
-      console.log(`${new Date().toISOString()} Subscribing to transaction confirmation`);
-
-      const confirmTransactionPromise = config.RPC.confirmTransaction(
-        {
-          signature,
-          blockhash: deserializedTransaction.message.recentBlockhash,
-          lastValidBlockHeight: (await config.RPC.getLatestBlockhash()).lastValidBlockHeight,
-        },
-        'confirmed'
-      );
-
-      console.log(`${new Date().toISOString()} Sending Transaction ${signature}`);
-      
-      while (!confirmedTx) {
-        confirmedTx = await Promise.race([
-          confirmTransactionPromise,
-          new Promise((resolve) =>
-            setTimeout(() => {
-              resolve(null);
-            }, 2000)
-          ),
-        ]);
-
-        if (!confirmedTx) {
-          await config.RPC.sendRawTransaction(deserializedTransaction.serialize(), {
-            skipPreflight: true,
-            maxRetries: 0,
-          });
-        }
-      }
-
-      if (!confirmedTx) {
-        throw new Error("Transaction confirmation failed");
-      }
-
-      console.log(`${new Date().toISOString()} Transaction successful: https://explorer.solana.com/tx/${signature}`);
-      
+      const signature = await confirmTransaction(body.transaction);
       return new Response(JSON.stringify({ message: 'success', signature }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -140,9 +92,9 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
         headers: { 'Content-Type': 'application/json' },
       });
     }
-  }, { body: SendTransactionSchema })
+  })
 
-  .get('/createPaymentTransaction', async ({ query }: { query: CreateTransactionParams }) => {
+  .get('/createPaymentTransaction', async ({ query }: { query: CreatePayment }) => {
     try {
       const dataset = await getDataset(query.datasetId);
       if (!dataset || !dataset.price) {
@@ -157,7 +109,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
       const signer = new PublicKey(query.signer);
       const senderInfo = await config.RPC.getAccountInfo(signer);
       if (!senderInfo) {
-        const message = 'Sender not found';
+        const message = 'Ensure you have SOL on your wallet';
         console.error(message);
         return new Response(JSON.stringify({ error: message }), {
           status: 404,
@@ -175,14 +127,7 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
         TOKEN_PROGRAM_ID
       );
 
-      /* note: USDC mint is forced as payment for simplicity to not change Dataset schema 
-         which should be changed to accept multiple tokens as payment
-
-        const transferInstruction = mint.toString() === 'So11111111111111111111111111111111111111112'
-          ? await createSPLTokenInstruction(recipient, amount, splToken, sender, connection)
-          : await createSystemInstruction(recipient, amount, sender, connection);
-      */
-      const transferInstruction = await createSPLTokenInstruction(recipient, amount, signer);
+      const transferInstruction = await createTransferInstruction(recipient, amount, signer);
 
       transferInstruction.keys.push(
         { pubkey: datasetReference, isWritable: false, isSigner: false },
@@ -204,56 +149,9 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
     }
   })
 
-  .post('/sendPaymentTransaction', async ({ body }: { body: SendTransaction }) => {
-    const transactionBuffer = Buffer.from(body.transaction, 'base64');
-    const deserializedTransaction = VersionedTransaction.deserialize(transactionBuffer);
-
+  .post('/sendPaymentTransaction', async ({ body }: { body: SendPayment }) => {
     try {
-      const signature = await config.RPC.sendRawTransaction(deserializedTransaction.serialize(), {
-        skipPreflight: true,
-        maxRetries: 0,
-      });
-
-      let confirmedTx = null;
-
-      console.log(`${new Date().toISOString()} Subscribing to transaction confirmation`);
-
-      const confirmTransactionPromise = config.RPC.confirmTransaction(
-        {
-          signature,
-          blockhash: deserializedTransaction.message.recentBlockhash,
-          lastValidBlockHeight: (await config.RPC.getLatestBlockhash()).lastValidBlockHeight,
-        },
-        'confirmed'
-      );
-
-      console.log(`${new Date().toISOString()} Sending Transaction ${signature}`);
-      
-      while (!confirmedTx) {
-        confirmedTx = await Promise.race([
-          confirmTransactionPromise,
-          new Promise((resolve) =>
-            setTimeout(() => {
-              resolve(null);
-            }, 2000)
-          ),
-        ]);
-
-        if (!confirmedTx) {
-          await config.RPC.sendRawTransaction(deserializedTransaction.serialize(), {
-            skipPreflight: true,
-            maxRetries: 0,
-          });
-        }
-      }
-
-      if (!confirmedTx) {
-        throw new Error("Transaction confirmation failed");
-      }
-
-      console.log(`${new Date().toISOString()} Transaction successful: https://explorer.solana.com/tx/${signature}`);
-
-      // note: in this validation the permission messages are posted and the transaction info is saved on db
+      const signature = await confirmTransaction(body.transaction);
       await validateTransfer(signature, body.datasetId);
       
       return new Response(JSON.stringify({ message: 'success', signature }), {
@@ -268,9 +166,9 @@ export const solanaManager = new Elysia({ prefix: '/solana' })
         headers: { 'Content-Type': 'application/json' },
       });
     }
-  }, { body: SendTransactionSchema })
+  }, { body: SendPaymentSchema })
   
-  .get('/getTransactions', async ({ query: { address } }: { query: GetTransactionsParams }) => {
+  .get('/getTransactions', async ({ query: { address } }: { query: GetTransactions }) => {
     try {
       let totalProfit = new BigNumber(0);
       let totalSales = 0;
